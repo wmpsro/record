@@ -43,7 +43,9 @@ class Recorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
   }
   
   func start(config: RecordConfig, path: String) throws {
-    stopRecording()
+    if m_audioWriter != nil {
+        stopRecording()
+    }
     
     try deleteFile(path: path)
     
@@ -149,7 +151,9 @@ class Recorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
   }
 
   private func stopRecording() {
-    m_writerInput?.markAsFinished()
+    if let audioWriter = m_audioWriter, audioWriter.status == .unknown {
+        return
+    }
 
     if let audioWriter = m_audioWriter {
       audioWriter.finishWriting(completionHandler: { [weak self] in
