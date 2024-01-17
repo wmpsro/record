@@ -22,7 +22,6 @@ class MediaRecorderDelegate extends RecorderDelegate {
   // Completer to get data & stop events before `stop()` method ends
   Completer<String?>? _onStopCompleter;
 
-  StreamController<Uint8List>? _recordStreamCtrl;
   final _elapsedTime = Stopwatch();
 
   // Amplitude
@@ -42,7 +41,7 @@ class MediaRecorderDelegate extends RecorderDelegate {
   @override
   Future<void> dispose() async {
     await stop();
-    _reset();
+    return _reset();
   }
 
   @override
@@ -93,12 +92,36 @@ class MediaRecorderDelegate extends RecorderDelegate {
     required String path,
   }) async {
     _mediaRecorder?.stop();
-    _reset();
+    await _reset();
 
     try {
-      _mediaStream = await initMediaStream(config);
+      final mediaStream = await initMediaStream(config);
 
-      _onStart(_mediaStream!, config);
+      // Try to assign dedicated mime type.
+      // If contrainst isn't set, browser will record with its default codec.
+      final mimeType = getSupportedMimeType(config.encoder);
+
+      final mediaRecorder = MediaRecorder(
+        mediaStream,
+        MediaRecorderOptions(
+          audioBitsPerSecond: config.bitRate,
+          bitsPerSecond: config.bitRate,
+          mimeType: mimeType,
+        ),
+      );
+      mediaRecorder.ondataavailable = jsu.allowInterop(_onDataAvailable);
+      mediaRecorder.onstop = jsu.allowInterop(_onStop);
+
+      _elapsedTime.start();
+
+      mediaRecorder.start(200); // Will trigger dataavailable every 200ms
+
+      _createAudioContext(config, mediaStream);
+
+      _mediaRecorder = mediaRecorder;
+      _mediaStream = mediaStream;
+
+      onStateChanged(RecordState.record);
     } catch (error) {
       _onError(error);
     }
@@ -115,8 +138,6 @@ class MediaRecorderDelegate extends RecorderDelegate {
       _onStopCompleter = Completer();
 
       _mediaRecorder?.stop();
-
-      onStateChanged(RecordState.stop);
 
       return _onStopCompleter!.future;
     }
@@ -143,33 +164,6 @@ class MediaRecorderDelegate extends RecorderDelegate {
     return state == RecordingState.recording || state == RecordingState.paused;
   }
 
-  void _onStart(MediaStream stream, RecordConfig config) {
-    // Try to assign dedicated mime type.
-    // If contrainst isn't set, browser will record with its default codec.
-    final mimeType = getSupportedMimeType(config.encoder);
-
-    final mediaRecorder = MediaRecorder(
-      stream,
-      MediaRecorderOptions(
-        audioBitsPerSecond: config.bitRate,
-        bitsPerSecond: config.bitRate,
-        mimeType: mimeType,
-      ),
-    );
-    mediaRecorder.ondataavailable = jsu.allowInterop(_onDataAvailable);
-    mediaRecorder.onstop = jsu.allowInterop(_onStop);
-
-    _elapsedTime.start();
-
-    mediaRecorder.start(200); // Will trigger dataavailable every 200ms
-
-    _createAudioContext(stream);
-
-    _mediaRecorder = mediaRecorder;
-
-    onStateChanged(RecordState.record);
-  }
-
   void _onError(dynamic error) {
     _reset();
     debugPrint(error.toString());
@@ -189,15 +183,17 @@ class MediaRecorderDelegate extends RecorderDelegate {
     String? audioUrl;
 
     if (_chunks.isNotEmpty) {
-      debugPrint('Container/codec chosen: ${_mediaRecorder?.mimeType}');
-
       _elapsedTime.stop();
+
+      debugPrint('Container/codec chosen: ${_mediaRecorder?.mimeType}');
 
       var blob = await jsu.promiseToFuture(
         fixWebmDuration(
           Blob(
             _chunks,
-            BlobPropertyBag(type: _mediaRecorder?.mimeType ?? 'audio/webm'),
+            BlobPropertyBag(
+              type: _mediaRecorder?.mimeType ?? 'audio/webm;codecs=opus',
+            ),
           ),
           _elapsedTime.elapsedMilliseconds,
           null,
@@ -207,7 +203,9 @@ class MediaRecorderDelegate extends RecorderDelegate {
       audioUrl = Url.createObjectURL(blob);
     }
 
-    _reset();
+    await _reset();
+
+    onStateChanged(RecordState.stop);
 
     _onStopCompleter?.complete(audioUrl);
   }
@@ -228,13 +226,11 @@ class MediaRecorderDelegate extends RecorderDelegate {
     _analyser = null;
 
     _chunks = [];
-
-    _recordStreamCtrl?.close();
-    _recordStreamCtrl = null;
   }
 
-  void _createAudioContext(MediaStream stream) {
+  void _createAudioContext(RecordConfig config, MediaStream stream) {
     final audioCtx = AudioContext();
+
     final source = audioCtx.createMediaStreamSource(stream);
 
     final analyser = audioCtx.createAnalyser();

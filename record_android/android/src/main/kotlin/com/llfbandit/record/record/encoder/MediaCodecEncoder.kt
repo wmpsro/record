@@ -1,9 +1,11 @@
 package com.llfbandit.record.record.encoder
 
+import android.annotation.TargetApi
 import android.media.MediaCodec
 import android.media.MediaCodec.CodecException
 import android.media.MediaCodecList
 import android.media.MediaFormat
+import android.os.Build
 import com.llfbandit.record.record.container.IContainerWriter
 
 class MediaCodecEncoder(
@@ -30,26 +32,50 @@ class MediaCodecEncoder(
         container.release()
     }
 
+    @TargetApi(Build.VERSION_CODES.Q)
+    private fun findCodecForFormat(format: MediaFormat): String? {
+        val mime = format.getString(MediaFormat.KEY_MIME)
+        val codecs = MediaCodecList(MediaCodecList.REGULAR_CODECS)
+
+        for (info in codecs.codecInfos.sortedBy { !it.canonicalName.startsWith("c2.android") }) {
+            if (!info.isEncoder) {
+                continue
+            }
+            try {
+                val caps = info.getCapabilitiesForType(mime)
+                if (caps != null && caps.isFormatSupported(format)) {
+                    return info.canonicalName
+                }
+            } catch (e: IllegalArgumentException) {
+                // type is not supported
+            }
+        }
+        return null
+    }
+
     private fun createCodec(mediaFormat: MediaFormat): MediaCodec {
-        val encoder =
+        val encoder = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             MediaCodecList(MediaCodecList.REGULAR_CODECS).findEncoderForFormat(mediaFormat)
-                ?: throw Exception("No encoder found for $mediaFormat")
-
-        val codec = MediaCodec.createByCodecName(encoder)
-
-        try {
-            codec.configure(mediaFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        } catch (e: Exception) {
-            codec.release()
-            throw e
+        } else {
+            findCodecForFormat(mediaFormat)
         }
 
-        return codec
+        encoder ?: throw Exception("No encoder found for $mediaFormat")
+
+        var mediaCodec: MediaCodec? = null
+        try {
+            mediaCodec = MediaCodec.createByCodecName(encoder)
+            mediaCodec.configure(mediaFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            return mediaCodec
+        } catch (e: Exception) {
+            mediaCodec?.release()
+            throw e
+        }
     }
 
     private fun internalStop() {
         codec.stop()
-        container.stop()
+
         listener.onEncoderStop()
     }
 

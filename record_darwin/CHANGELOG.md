@@ -1,3 +1,19 @@
+## 1.0.1
+* chore: Reworked again implementations to be closer to previous versions:
+    - iOS Simulator is now usable again.
+    - streaming is now done via AudioEngine.
+* fix: Wrong channel bounds (Thanks to @EvertonMJunior)
+
+## 1.0.0
+* chore: Initial stable release.
+
+## 1.0.0-beta.2+4
+* fix: reflect stop changes on iOS code.
+
+## 1.0.0-beta.2+3
+* fix: stop method should return path only after completed recording.
+* fix: Send stream event on main thread.
+
 ## 1.0.0-beta.2+2
 * fix: PCM custom settings.
 * fix: PCM big endian missing key.

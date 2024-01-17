@@ -20,7 +20,14 @@ class Recorder {
     if (mediaDevices == null) return false;
 
     try {
-      await mediaDevices.getUserMedia({'audio': true});
+      final ms = await mediaDevices.getUserMedia({'audio': true});
+
+      // Clean-up
+      final tracks = ms.getAudioTracks();
+      for (var track in tracks) {
+        track.stop();
+      }
+
       return true;
     } catch (_) {
       return false;
@@ -144,7 +151,6 @@ class Recorder {
     RecordConfig config,
   ) async {
     switch (config.encoder) {
-      case AudioEncoder.wav:
       case AudioEncoder.pcm16bits:
         await _delegate?.dispose();
         _delegate = MicRecorderDelegate(onStateChanged: _updateState);

@@ -23,7 +23,9 @@ abstract class RecorderDelegate {
 
   Future<String?> stop();
 
-  Future<MediaStream> initMediaStream(RecordConfig config) async {
+  Future<MediaStream> initMediaStream(
+    RecordConfig config,
+  ) async {
     final constraints = MediaStreamConstraints(
       audio: config.device == null
           ? true
@@ -38,7 +40,7 @@ abstract class RecorderDelegate {
     final audioTracks = mediaStream.getAudioTracks();
 
     for (var track in audioTracks) {
-      track.applyConstraints(MediaTrackConstraints(
+      await track.applyConstraints(MediaTrackConstraints(
         autoGainControl: config.autoGain,
         echoCancellation: config.echoCancel,
         noiseSuppression: config.noiseSuppress,
@@ -57,11 +59,9 @@ abstract class RecorderDelegate {
     final ms = mediaStream;
 
     if (ms != null) {
-      final tracks = ms.getTracks();
-
+      final tracks = ms.getAudioTracks();
       for (var track in tracks) {
         track.stop();
-        ms.removeTrack(track);
       }
     }
 
